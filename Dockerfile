@@ -1,6 +1,6 @@
 FROM python:alpine3.10
 
-RUN apk --no-cache add curl
+#RUN apk --no-cache add curl
 
 WORKDIR /app
 
@@ -9,7 +9,7 @@ WORKDIR /app
 
 ENV CACHED_LOCATION=/data/
 
-RUN pip install flask loguru --no-cache-dir
+RUN pip install flask loguru minato --no-cache-dir
 
 COPY main_app.py .
 
