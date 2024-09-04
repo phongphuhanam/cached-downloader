@@ -12,7 +12,7 @@ status=$?
 
 if [ $status -ne 0 ]; then
   echo "Failed cache retrieval. Try downloading again from the original source."
-  curl $DOWNLOAD_URL --output $DOWNLOAD_LOC
+  curl --silent --show-error --fail $DOWNLOAD_URL --output $DOWNLOAD_LOC
 fi
 
 
