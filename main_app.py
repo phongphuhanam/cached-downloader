@@ -21,8 +21,12 @@ def download_file():
     _basename = get_file_name_from_url(file_name)
     target_filename = os.path.join(download_location, _basename)
     if not os.path.isfile(target_filename):
-        _cmd = f'curl --silent {file_name} --output {target_filename}'
+        _cmd = f'curl --silent --fail {file_name} --output {target_filename}'
         os.system(_cmd)
+        if os.path.isfile(target_filename):
+            loguru.logger.info(f'Downloading {file_name} was success')
+        else:
+            loguru.logger.warning(f'Downloading {file_name} was unsuccessful. Please verify its availability.')
     else:
         loguru.logger.info(f'{_basename} existed.') 
 
