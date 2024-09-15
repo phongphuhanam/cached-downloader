@@ -1,0 +1,8 @@
+services:
+  cachedownload:
+    build: .
+    environment:
+      FLASK_APP: /app/main_app.py
+    ports:
+      - "7575:5000"
+
