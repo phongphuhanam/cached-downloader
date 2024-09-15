@@ -1,8 +1,10 @@
 services:
   cachedownload:
+    init: true
     build: .
     environment:
       FLASK_APP: /app/main_app.py
     ports:
       - "7575:5000"
-
+    volumes:
+      - ./.cached/:/data/:rw
