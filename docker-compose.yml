@@ -8,3 +8,4 @@ services:
       - "7575:5000"
     volumes:
       - ./.cached/:/data/:rw
+    restart: unless-stopped
