@@ -4,9 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this project does
 
-A caching download proxy service. Clients POST a URL to the Flask server; the server downloads and caches the file locally using the `minato` library, then returns it as an attachment. On a cache hit, the file is served immediately without re-downloading.
+A caching download proxy designed to speed up Docker builds. When an earlier Dockerfile layer changes, Docker invalidates all subsequent layers — including `RUN curl ...` or `ADD <url>` steps — forcing files to be re-downloaded even if they haven't changed. This service caches downloads externally so that a cache-busted build can retrieve already-downloaded files from the local cache server instead of the internet.
 
-`cached_download.sh` is the client-side helper: it POSTs to the cache server and falls back to a direct download if the server is unavailable.
+Clients POST a URL to the Flask server; the server downloads and caches the file using the `minato` library, then returns it as an attachment. On a cache hit the file is served immediately. `cached_download.sh` is the intended replacement for `curl`/`wget` inside Dockerfiles — it POSTs to the cache server and falls back to a direct download if the server is unreachable.
 
 ## Running the service
 
