@@ -22,10 +22,14 @@ CMD ["flask", "run", "--host=0.0.0.0"]
 #
 # ADD https://raw.githubusercontent.com/phongphuhanam/cached-downloader/main/cached_download.sh /usr/bin/cached_download
 # ADD https://raw.githubusercontent.com/phongphuhanam/cached-downloader/main/cached_unpack.sh /usr/bin/cached_unpack
-# ENV CACHE_SERVER_LOC=http://cache-host:7575/download
+# ENV CACHE_SERVER_LOC=http://localhost:7575/download
 #
 # RUN cached_download https://example.com/model.bin /opt/model.bin
 # RUN cached_unpack https://example.com/tools.tar.gz /opt/tools/
+#
+# If the cache server runs on the same machine, build with --network=host
+# so the container can reach localhost:7575:
+#   docker build --network=host -t myimage .
 
 
 

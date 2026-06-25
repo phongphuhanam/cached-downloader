@@ -34,10 +34,16 @@ Both scripts fall back to a direct download if the cache server is unavailable.
 ```dockerfile
 ADD https://raw.githubusercontent.com/phongphuhanam/cached-downloader/main/cached_download.sh /usr/bin/cached_download
 ADD https://raw.githubusercontent.com/phongphuhanam/cached-downloader/main/cached_unpack.sh /usr/bin/cached_unpack
-ENV CACHE_SERVER_LOC=http://cache-host:7575/download
+ENV CACHE_SERVER_LOC=http://localhost:7575/download
 
 RUN cached_download https://example.com/model.bin /opt/model.bin
 RUN cached_unpack https://example.com/tools.tar.gz /opt/tools/
+```
+
+If the cache server runs on the same machine as the build, use `--network=host` so the build container can reach `localhost:7575`:
+
+```bash
+docker build --network=host -t myimage .
 ```
 
 ## Environment variables
