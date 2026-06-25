@@ -24,15 +24,19 @@ pip install flask loguru minato
 FLASK_APP=main_app.py flask run --host=0.0.0.0   # port 5000
 ```
 
-## Using the client script
+## Using the client scripts
 
+**`cached_download.sh`** — downloads a single file:
 ```bash
-# Uses CACHE_SERVER_LOC env var (default: http://localhost:7575/download)
 ./cached_download.sh <URL> <output-path>
-
-# Point at a remote server
 CACHE_SERVER_LOC=http://myserver:7575/download ./cached_download.sh <URL> <output-path>
 ```
+
+**`cached_unpack.sh`** — streams and extracts an archive on the fly into a destination directory:
+```bash
+./cached_unpack.sh <URL> <destination-dir>
+```
+Supports `.tar.gz`/`.tgz`, `.tar.bz2`/`.tbz2`, `.tar.xz`/`.txz`, `.tar.zst`, and `.tar`. Both scripts fall back to a direct download if the cache server is unavailable. Both respect the `CACHE_SERVER_LOC` env var.
 
 ## Environment variables
 
