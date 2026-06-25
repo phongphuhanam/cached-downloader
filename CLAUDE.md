@@ -44,6 +44,22 @@ CACHE_SERVER_LOC=http://myserver:7575/download ./cached_download.sh <URL> <outpu
 | `EXPIRE_DAYS` | `-1` (never) | Evict cached files older than N days |
 | `CACHE_SERVER_LOC` | `http://localhost:7575/download` | Cache server URL (client script only) |
 
+## Alternatives and prior art
+
+**Docker-native**
+- `--mount=type=cache` (BuildKit) — caches directories across builds without an external service; closest built-in equivalent.
+- `ADD <url>` with BuildKit — deduplicates URL fetches when the URL is unchanged.
+
+**HTTP caching proxies**
+- **Squid** / **Nginx `proxy_cache`** — intercept `curl`/`wget` transparently via `http_proxy`; no script changes needed but require proxy configuration on the client.
+- **Nexus / Artifactory** — enterprise artifact proxies that also cache raw URLs alongside Maven, PyPI, npm, etc.
+
+**Tool-specific caches**
+- `pip cache`, `npm cache`, Maven local repo — per-ecosystem caches; mounting them as Docker volumes achieves the same goal within their ecosystems.
+- **`uv`** (Python) — aggressive caching designed to work well with Docker layer caching.
+
+**Advantage of this app** over Squid/Nginx: no proxy configuration needed on the client — just swap `curl` for `cached_download.sh`. The fallback to direct download also makes it resilient when the cache server isn't running.
+
 ## Architecture
 
 - **`main_app.py`** — Single Flask app with one route (`POST /download`). Delegates all caching logic to `minato.cached_path()`. Returns the cached file via `send_from_directory`.
