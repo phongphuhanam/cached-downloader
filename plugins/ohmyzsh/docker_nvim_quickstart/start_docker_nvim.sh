@@ -4,7 +4,7 @@ set -euo pipefail
 
 START_IMAGE=${1:-}
 if [[ -z "$START_IMAGE" ]]; then
-  echo "Usage: $0 <base_image> [username] [container_name] [build|run] [docker_run_extra]"
+  echo "Usage: $0 <base_image> [username] [container_name] [build|run] [docker_run_extra...]"
   exit 1
 fi
 
@@ -13,16 +13,14 @@ USERNAME="${2:-dev}"
 DOCKER_NAME="${3:-python_dev}"
 START_CMD="/bin/bash"
 MODE="${4:-run}"
-EXTRA_OPTS="${5:-}"
+EXTRA_OPTS=("${@:5}")
 
 ROOT_DIR="/home/$USERNAME"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # $BUILD_NAME is a locally-layered dev image, not something published to a
-# registry, so there's nothing to pull. Build it once per (base image, user)
-# pair and reuse the local image on every later call unless a rebuild is
-# explicitly requested (MODE=build) or it isn't built yet.
-if [[ "$MODE" == "build" ]] || ! docker image inspect "$BUILD_NAME" >/dev/null 2>&1; then
+# registry, so there's nothing to pull.
+build_image() {
   echo "[INFO] Building Docker image: $BUILD_NAME"
   pushd "$SCRIPT_DIR"
   if docker buildx version >/dev/null 2>&1; then
@@ -38,6 +36,19 @@ if [[ "$MODE" == "build" ]] || ! docker image inspect "$BUILD_NAME" >/dev/null 2
       .
   fi
   popd
+}
+
+# This script only creates images/containers -- it doesn't manage running
+# ones. `build` mode (re)builds the image and stops there; reconnect to an
+# already-running container with `docker exec` directly, not by re-running
+# this script.
+if [[ "$MODE" == "build" ]]; then
+  build_image
+  exit 0
+fi
+
+if ! docker image inspect "$BUILD_NAME" >/dev/null 2>&1; then
+  build_image
 else
   echo "[INFO] Reusing existing image: $BUILD_NAME"
 fi
@@ -48,6 +59,17 @@ echo "  Base image     : $BUILD_NAME"
 echo "  Mount home dir : $ROOT_DIR"
 echo "  Entry command  : $START_CMD"
 
+# This command only creates containers. If one with this name already
+# exists (running or stopped), stop and point at how to reconnect instead
+# of silently attaching or recreating it out from under extra run flags.
+if docker ps -a --format '{{.Names}}' | grep -qx "$DOCKER_NAME"; then
+  echo "[ERROR] Container '$DOCKER_NAME' already exists." >&2
+  echo "        Reconnect with: docker exec -it $DOCKER_NAME /bin/zsh" >&2
+  echo "        (start it first if it's stopped: docker start $DOCKER_NAME)" >&2
+  echo "        Or remove it and recreate: dnvim rm $DOCKER_NAME" >&2
+  exit 1
+fi
+
 # Ensure persistent volume for container home directory
 CACHE_DIR=".cache/$DOCKER_NAME"
 mkdir -p "$CACHE_DIR"
@@ -57,28 +79,15 @@ HOMEDIR=$(realpath "$CACHE_DIR")
 grep -qxF ".cache/" .gitignore 2>/dev/null || echo ".cache/" >> .gitignore
 grep -qxF "./tmp/" .gitignore 2>/dev/null || echo "./tmp/" >> .gitignore
 
-# Re-run against a container that already exists (same name = same project +
-# base image) instead of failing on a name conflict: attach to it directly.
-if docker ps -a --format '{{.Names}}' | grep -qx "$DOCKER_NAME"; then
-  if [[ "$(docker inspect -f '{{.State.Running}}' "$DOCKER_NAME")" != "true" ]]; then
-    echo "[INFO] Starting existing stopped container: $DOCKER_NAME"
-    docker start "$DOCKER_NAME" >/dev/null
-  fi
-  echo "[INFO] Attaching to container: $DOCKER_NAME"
-  exec docker exec -it "$DOCKER_NAME" /bin/zsh
-fi
-
 # Mount the current directory at the same path inside the container, so
 # paths (and things like editor jump-to-file) match on both sides.
-DOCKER_RUN_OPTS="-v $HOMEDIR:$ROOT_DIR:rw"
-DOCKER_RUN_OPTS+=" -v $PWD:$PWD -w $PWD"
-DOCKER_RUN_OPTS+=" --env=TERM=xterm-256color --env=QT_X11_NO_MITSHM=1"
-DOCKER_RUN_OPTS+=" $EXTRA_OPTS"
+DOCKER_RUN_OPTS=(-v "$HOMEDIR:$ROOT_DIR:rw" -v "$PWD:$PWD" -w "$PWD" \
+  --env=TERM=xterm-256color --env=QT_X11_NO_MITSHM=1)
 
 # Optional: add DISPLAY/X11 setup here if needed in future
 
 echo "[INFO] Starting Docker container: $DOCKER_NAME"
-docker run --init -it $DOCKER_RUN_OPTS \
+docker run --init -it "${DOCKER_RUN_OPTS[@]}" "${EXTRA_OPTS[@]}" \
   --name="$DOCKER_NAME" \
   --user "$(id -u):$(id -g)" \
   "$BUILD_NAME" "$START_CMD"

@@ -1,7 +1,10 @@
 #!/usr/bin/env zsh
 # docker_nvim_quickstart.plugin.zsh
-# Oh My Zsh plugin: run/attach a Neovim + zsh dev container layered on top
-# of any local Docker image, from whatever project directory you're in.
+# Oh My Zsh plugin: create a Neovim + zsh dev container layered on top of
+# any local Docker image, from whatever project directory you're in.
+#
+# dnvim only creates images/containers -- it does not manage running ones.
+# Reconnect to an already-created container with `docker exec` directly.
 #
 # Backed by start_docker_nvim.sh / Dockerfile.nvim next to this file (found
 # via the current script path, so this still works once this file is
@@ -28,7 +31,8 @@ dnvim() {
 
   case "${1:-}" in
     ""|-h|--help)
-      echo "usage: dnvim <image> [username] | dnvim rebuild <image> | dnvim ls | dnvim rm <container-name>" >&2
+      echo "usage: dnvim <image> [username] [-- <docker run args>]" >&2
+      echo "       dnvim rebuild <image> | dnvim ls | dnvim rm <container-name>" >&2
       return 1
       ;;
     ls)
@@ -42,24 +46,36 @@ dnvim() {
       ;;
     rebuild)
       local image="${2:?usage: dnvim rebuild <image>}"
-      _dnvim_run "$image" build
+      # Rebuilds the image only -- does not touch any container.
+      _dnvim_run "$image" build dev
       return
       ;;
   esac
 
-  local image="$1" username="${2:-dev}"
-  _dnvim_run "$image" run "$username"
+  local image="$1"
+  shift
+  local username="dev"
+  # A second positional that isn't "--" is the username; "--" (with nothing
+  # or a username already consumed before it) introduces raw docker flags.
+  if [[ "${1:-}" != "--" && -n "${1:-}" ]]; then
+    username="$1"
+    shift
+  fi
+  [[ "${1:-}" == "--" ]] && shift
+  _dnvim_run "$image" run "$username" "$@"
 }
 
 _dnvim_run() {
-  local image="$1" mode="$2" username="${3:-dev}"
+  local image="$1" mode="$2" username="$3"
+  shift 3
   # Derive the container name from project dir + image so different
   # projects (or the same project against different base images) don't
-  # collide, and re-running the same pair attaches instead of erroring.
+  # collide. dnvim only creates -- it errors if this name already exists
+  # rather than attaching or recreating it (see start_docker_nvim.sh).
   local safe_image="${image//[:\/]/_}"
   local container_name="${PWD:t}_${safe_image}"
 
-  "$DOCKER_NVIM_HOME/start_docker_nvim.sh" "$image" "$username" "$container_name" "$mode"
+  "$DOCKER_NVIM_HOME/start_docker_nvim.sh" "$image" "$username" "$container_name" "$mode" "$@"
 }
 
 # Completion helpers shared with _docker_nvim_quickstart (mirrors
