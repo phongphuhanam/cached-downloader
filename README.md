@@ -11,6 +11,8 @@ docker compose up           # subsequent runs
 
 The server listens on `http://localhost:7575`. Downloaded files are stored in `.cached/`.
 
+`docker compose up` also starts an **`apt-cacher-ng`** service (port `3142`, cache in `.apt-cache/`) for Debian-family image builds: it caches `apt-get install` package fetches the same way this service caches URL downloads, so a base-image bump doesn't force re-downloading every `.deb`. It's optional — a build only uses it if it's reachable; see [`plugins/ohmyzsh/docker_nvim_quickstart`](plugins/ohmyzsh/docker_nvim_quickstart) for a Dockerfile that wires it in.
+
 ## Client scripts
 
 ### `cached_download.sh` — download a file
@@ -55,3 +57,7 @@ docker build --network=host -t myimage .
 | `AUTO_UPDATE` | `0` | Re-download if remote file changed |
 | `FORCE_DOWNLOAD` | `0` | Always re-download regardless of cache |
 | `EXPIRE_DAYS` | `-1` (never) | Evict cached files older than N days |
+
+## Example: a full dev container built on this
+
+[`plugins/ohmyzsh/docker_nvim_quickstart`](plugins/ohmyzsh/docker_nvim_quickstart) is an Oh My Zsh plugin (`dnvim <image>`) that layers a Neovim + zsh dev environment on top of any local Docker image, using `cached_download` for every tool install (Node, Neovim, ripgrep, fd, yq, rclone) and `apt-cacher-ng` for the underlying `apt-get install`. It's a good end-to-end reference for using both caches together in a real Dockerfile.
