@@ -1,0 +1,131 @@
+ARG BASE_IMAGE=python:3.7
+FROM $BASE_IMAGE
+# ARGUMENTS
+LABEL maintainer phongphu <phongphu>
+
+USER root
+
+# apt-cacher-ng caches .deb packages outside the image, so a BASE_IMAGE bump
+# (which busts every layer below it, including this one) doesn't force a full
+# re-download from the Debian/Ubuntu mirrors on every rebuild. Opt-in and
+# resilient: if it isn't reachable, apt just goes direct to the internet.
+# Start it with: docker compose up apt-cacher-ng   (from the repo root)
+ARG APT_CACHE_HOST=localhost
+ARG APT_CACHE_PORT=3142
+RUN if bash -c "timeout 2 bash -c '</dev/tcp/${APT_CACHE_HOST}/${APT_CACHE_PORT}'" 2>/dev/null; then \
+      echo "[INFO] apt-cacher-ng reachable at ${APT_CACHE_HOST}:${APT_CACHE_PORT}, enabling apt proxy" && \
+      printf 'Acquire::http::Proxy "http://%s:%s";\nAcquire::https::Proxy "http://%s:%s";\n' \
+        "$APT_CACHE_HOST" "$APT_CACHE_PORT" "$APT_CACHE_HOST" "$APT_CACHE_PORT" \
+        > /etc/apt/apt.conf.d/01-apt-cacher-ng; \
+    else \
+      echo "[INFO] apt-cacher-ng not reachable at ${APT_CACHE_HOST}:${APT_CACHE_PORT}, using direct apt"; \
+    fi
+
+RUN apt-get update -o Acquire::https::Verify-Peer=false -o Acquire::AllowInsecureRepositories=true || true &&     _pkgs="wget curl git zsh locales";     command -v gcc  >/dev/null 2>&1 || _pkgs="$_pkgs gcc";     command -v g++  >/dev/null 2>&1 || _pkgs="$_pkgs g++";     python3 -m venv --help >/dev/null 2>&1 || _pkgs="$_pkgs python3-venv";     apt-get install -y --no-install-recommends --fix-missing --allow-unauthenticated $_pkgs &&     rm -rf /var/lib/apt/lists/*
+
+ADD https://raw.githubusercontent.com/phongphuhanam/cached-downloader/main/cached_download.sh /usr/bin/cached_download
+RUN chmod +x /usr/bin/cached_download
+
+WORKDIR /opt/
+
+# rclone https://github.com/rclone/rclone/releases/
+# Asset naming already matches dpkg's own arch string (amd64/arm64) 1:1.
+ARG RCLONE_VERSION=v1.73.5
+RUN ARCH="$(dpkg --print-architecture)" && \
+    cached_download "https://github.com/rclone/rclone/releases/download/${RCLONE_VERSION}/rclone-${RCLONE_VERSION}-linux-${ARCH}.deb" /tmp/rclone.deb && \
+    dpkg -i /tmp/rclone.deb && rm -f /tmp/rclone.deb
+
+# https://nodejs.org/en/download
+ARG NODEJS_VERSION=v20.17.0
+RUN ARCH="$(dpkg --print-architecture)" && \
+    case "$ARCH" in \
+      amd64) NODE_ARCH=x64 ;; \
+      arm64) NODE_ARCH=arm64 ;; \
+      *) echo "unsupported arch for node: $ARCH" >&2; exit 1 ;; \
+    esac && \
+    cached_download "https://nodejs.org/download/release/${NODEJS_VERSION}/node-${NODEJS_VERSION}-linux-${NODE_ARCH}.tar.gz" /tmp/node.tar.gz && \
+    tar -C /opt/ -xzf /tmp/node.tar.gz && rm -f /tmp/node.tar.gz && \
+    mv "/opt/node-${NODEJS_VERSION}-linux-${NODE_ARCH}" /opt/node
+ENV PATH="$PATH:/opt/node/bin/"
+
+# https://github.com/neovim/neovim/releases
+ARG NVIM_VERSION=v0.12.2
+RUN ARCH="$(dpkg --print-architecture)" && \
+    case "$ARCH" in \
+      amd64) NVIM_ARCH=x86_64 ;; \
+      arm64) NVIM_ARCH=arm64 ;; \
+      *) echo "unsupported arch for nvim: $ARCH" >&2; exit 1 ;; \
+    esac && \
+    cached_download "https://github.com/neovim/neovim/releases/download/${NVIM_VERSION}/nvim-linux-${NVIM_ARCH}.tar.gz" /tmp/nvim.tar.gz && \
+    tar -C /opt -xzf /tmp/nvim.tar.gz && rm -f /tmp/nvim.tar.gz && \
+    mv "/opt/nvim-linux-${NVIM_ARCH}" /opt/nvim
+ENV PATH="$PATH:/opt/nvim/bin/"
+
+# https://github.com/BurntSushi/ripgrep/releases
+# No arm64 .deb is published for this tool (amd64 only) -- arm64 falls back
+# to the raw aarch64-unknown-linux-gnu tarball and installs the bare binary.
+ARG RIPGREP_VERSION=15.1.0
+RUN ARCH="$(dpkg --print-architecture)" && \
+    case "$ARCH" in \
+      amd64) \
+        cached_download "https://github.com/BurntSushi/ripgrep/releases/download/${RIPGREP_VERSION}/ripgrep_${RIPGREP_VERSION}-1_amd64.deb" /tmp/ripgrep.deb && \
+        dpkg -i /tmp/ripgrep.deb && rm -f /tmp/ripgrep.deb \
+        ;; \
+      arm64) \
+        cached_download "https://github.com/BurntSushi/ripgrep/releases/download/${RIPGREP_VERSION}/ripgrep-${RIPGREP_VERSION}-aarch64-unknown-linux-gnu.tar.gz" /tmp/ripgrep.tar.gz && \
+        mkdir -p /tmp/ripgrep-extract && tar -C /tmp/ripgrep-extract -xzf /tmp/ripgrep.tar.gz && \
+        install -m 0755 "$(find /tmp/ripgrep-extract -type f -name rg)" /usr/bin/rg && \
+        rm -rf /tmp/ripgrep.tar.gz /tmp/ripgrep-extract \
+        ;; \
+      *) echo "unsupported arch for ripgrep: $ARCH" >&2; exit 1 ;; \
+    esac
+
+# https://github.com/sharkdp/fd/releases
+# Asset naming already matches dpkg's own arch string (amd64/arm64) 1:1.
+ARG FD_FIND_VERSION=10.2.0
+RUN ARCH="$(dpkg --print-architecture)" && \
+    cached_download "https://github.com/sharkdp/fd/releases/download/v${FD_FIND_VERSION}/fd_${FD_FIND_VERSION}_${ARCH}.deb" /tmp/fd.deb && \
+    dpkg -i /tmp/fd.deb && rm -f /tmp/fd.deb
+
+# add pip packages when necessary
+# ENV PIP_CACHE_DIR /var/pip
+# RUN python3 -m pip install --upgrade pip --break-system-packages
+# COPY requirements.txt /tmp/requirements.txt
+# RUN --mount=type=cache,target=/var/pip PIP_CACHE_DIR=/var/pip pip install -r /tmp/requirements.txt --break-system-packages
+
+# https://github.com/mikefarah/yq/releases
+# Asset naming already matches dpkg's own arch string (amd64/arm64) 1:1.
+RUN ARCH="$(dpkg --print-architecture)" && \
+    cached_download "https://github.com/mikefarah/yq/releases/latest/download/yq_linux_${ARCH}" /usr/bin/yq && \
+    chmod +x /usr/bin/yq
+
+RUN cached_download https://gist.githubusercontent.com/phongphuhanam/16df05ca0a2ba522f19869016032489d/raw/pull_latest_nvim_config.sh /usr/local/bin/pull_latest_nvim_config.sh
+RUN chmod +x /usr/local/bin/pull_latest_nvim_config.sh
+
+ARG USER_NAME=dev
+ENV USERNAME $USER_NAME
+ENV HOME /home/$USERNAME
+ARG USERID=1000
+ARG GROUPID=1000
+# Replace 1000 with your user/group id
+#
+RUN if getent passwd "$USERNAME" > /dev/null 2>&1; then echo "User $USERNAME already exists." && exit 0; else useradd -m $USERNAME && echo "$USERNAME:$USERNAME" | chpasswd && usermod --shell /bin/zsh $USERNAME && usermod -aG sudo $USERNAME && mkdir -p /etc/sudoers.d && echo "$USERNAME ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers.d/$USERNAME && chmod 0440 /etc/sudoers.d/$USERNAME; fi
+
+#
+RUN ARCH="$(dpkg --print-architecture)" && cached_download "https://github.com/boxboat/fixuid/releases/download/v0.6.0/fixuid-0.6.0-linux-$ARCH.tar.gz" /tmp/fixuid.tar.gz && tar -C /usr/local/bin -xzf /tmp/fixuid.tar.gz && rm /tmp/fixuid.tar.gz && chown root:root /usr/local/bin/fixuid && chmod 4755 /usr/local/bin/fixuid && mkdir -p /etc/fixuid && printf "user: $USERNAME\ngroup: $USERNAME\n" > /etc/fixuid/config.yml
+#
+#
+ENV NVIM_CONFIG_BRANCH=python
+ENV NVIM_CONFIG_URL=https://github.com/phongphuhanam/quarto-nvim-kickstarter.git
+
+COPY entrypoint_omz.sh /opt/entrypoint_omz.sh
+RUN chmod +x /opt/entrypoint_omz.sh
+
+# USER root
+# RUN echo "${USERNAME}:${USERNAME}" | chpasswd
+
+
+USER ${USERNAME}
+# WORKDIR /home/${USERNAME}
+# Enable this line if fixuid is used.
+ENTRYPOINT ["/opt/entrypoint_omz.sh"]

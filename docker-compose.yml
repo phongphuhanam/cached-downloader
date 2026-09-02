@@ -9,3 +9,16 @@ services:
     volumes:
       - ./.cached/:/data/:rw
     restart: unless-stopped
+
+  # Caches apt/.deb packages for Debian-family image builds (e.g.
+  # plugins/ohmyzsh/docker_nvim_quickstart's Dockerfile.nvim), so a base-image
+  # bump doesn't force full re-downloads from the Debian/Ubuntu mirrors.
+  # Optional — only needed if a build points at it.
+  apt-cacher-ng:
+    image: sameersbn/apt-cacher-ng:latest
+    init: true
+    ports:
+      - "3142:3142"
+    volumes:
+      - ./.apt-cache/:/var/cache/apt-cacher-ng/:rw
+    restart: unless-stopped

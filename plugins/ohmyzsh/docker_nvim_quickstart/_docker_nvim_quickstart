@@ -1,0 +1,27 @@
+#compdef dnvim
+
+# Completion for docker_nvim_quickstart: mirrors `docker run <TAB>` for the
+# image argument, plus container-name completion for `dnvim rm` and image
+# completion for `dnvim rebuild`. Relies on _dnvim_images/_dnvim_containers
+# from docker_nvim_quickstart.plugin.zsh, which Oh My Zsh loads first.
+_docker_nvim_quickstart() {
+    local -a subs
+    subs=('ls:list locally-built *.nvim images' 'rebuild:force rebuild the nvim layer' 'rm:remove a dev container')
+
+    if (( CURRENT == 2 )); then
+        _dnvim_images
+        _describe -t subcommands 'subcommand' subs
+        return
+    fi
+
+    case "${words[2]}" in
+        rebuild)
+            (( CURRENT == 3 )) && _dnvim_images
+            ;;
+        rm)
+            (( CURRENT == 3 )) && _dnvim_containers
+            ;;
+    esac
+}
+
+_docker_nvim_quickstart
