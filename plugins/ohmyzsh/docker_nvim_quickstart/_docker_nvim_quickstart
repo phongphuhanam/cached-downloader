@@ -16,7 +16,11 @@ _docker_nvim_quickstart() {
 
     case "${words[2]}" in
         rebuild)
-            (( CURRENT == 3 )) && _dnvim_images
+            if (( CURRENT == 3 )); then
+                _dnvim_images
+            elif (( CURRENT == 4 )); then
+                compadd -- --enable-buildx
+            fi
             return
             ;;
         rm)
@@ -37,6 +41,11 @@ _docker_nvim_quickstart() {
         words=(docker run "${(@)words[i+1,-1]}")
         CURRENT=$(( CURRENT - i + 2 ))
         _normal
+    elif (( CURRENT <= i )); then
+        # Before "--" (or before it's been typed at all): offer the
+        # recognized options alongside whatever free-form username the
+        # user might be typing.
+        compadd -- --enable-buildx --
     fi
 }
 

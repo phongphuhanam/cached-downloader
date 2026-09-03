@@ -31,8 +31,8 @@ dnvim() {
 
   case "${1:-}" in
     ""|-h|--help)
-      echo "usage: dnvim <image> [username] [-- <docker run args>]" >&2
-      echo "       dnvim rebuild <image> | dnvim ls | dnvim rm <container-name>" >&2
+      echo "usage: dnvim <image> [username] [--enable-buildx] [-- <docker run args>]" >&2
+      echo "       dnvim rebuild <image> [--enable-buildx] | dnvim ls | dnvim rm <container-name>" >&2
       return 1
       ;;
     ls)
@@ -46,28 +46,36 @@ dnvim() {
       ;;
     rebuild)
       local image="${2:?usage: dnvim rebuild <image>}"
+      shift 2
+      local enable_buildx=0
+      [[ "${1:-}" == "--enable-buildx" ]] && enable_buildx=1
       # Rebuilds the image only -- does not touch any container.
-      _dnvim_run "$image" build dev
+      _dnvim_run "$image" build dev "$enable_buildx"
       return
       ;;
   esac
 
   local image="$1"
   shift
-  local username="dev"
-  # A second positional that isn't "--" is the username; "--" (with nothing
-  # or a username already consumed before it) introduces raw docker flags.
-  if [[ "${1:-}" != "--" && -n "${1:-}" ]]; then
-    username="$1"
+  local username="dev" enable_buildx=0
+  # Leading options in any order: a non-"--"/"--enable-buildx" token is the
+  # username; "--enable-buildx" opts into buildx; "--" introduces raw
+  # docker run flags and ends option parsing.
+  while [[ $# -gt 0 && "$1" != "--" ]]; do
+    if [[ "$1" == "--enable-buildx" ]]; then
+      enable_buildx=1
+    else
+      username="$1"
+    fi
     shift
-  fi
+  done
   [[ "${1:-}" == "--" ]] && shift
-  _dnvim_run "$image" run "$username" "$@"
+  _dnvim_run "$image" run "$username" "$enable_buildx" "$@"
 }
 
 _dnvim_run() {
-  local image="$1" mode="$2" username="$3"
-  shift 3
+  local image="$1" mode="$2" username="$3" enable_buildx="$4"
+  shift 4
   # Derive the container name from project dir + image so different
   # projects (or the same project against different base images) don't
   # collide. dnvim only creates -- it errors if this name already exists
@@ -75,7 +83,7 @@ _dnvim_run() {
   local safe_image="${image//[:\/]/_}"
   local container_name="${PWD:t}_${safe_image}"
 
-  "$DOCKER_NVIM_HOME/start_docker_nvim.sh" "$image" "$username" "$container_name" "$mode" "$@"
+  ENABLE_BUILDX="$enable_buildx" "$DOCKER_NVIM_HOME/start_docker_nvim.sh" "$image" "$username" "$container_name" "$mode" "$@"
 }
 
 # Completion helpers shared with _docker_nvim_quickstart (mirrors

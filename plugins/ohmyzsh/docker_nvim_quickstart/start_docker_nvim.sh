@@ -25,16 +25,20 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # cached-downloader server, apt-cacher-ng) already does the job BuildKit's
 # own cache mounts would, so buildx brings no benefit here and, on a
 # docker-container builder, would just maintain a second, separate build
-# cache on disk. If buildx is available it's opt-in: ask before using it,
-# rather than switching to it automatically.
+# cache on disk. buildx is opt-in via ENABLE_BUILDX=1 (set by `dnvim
+# --enable-buildx`), never auto-selected just because it's installed.
 build_image() {
   echo "[INFO] Building Docker image: $BUILD_NAME"
-  local use_buildx=""
-  if docker buildx version >/dev/null 2>&1; then
-    read -r -p "docker buildx is available -- use it for this build instead of classic 'docker build'? [y/N] " use_buildx
+  local use_buildx=0
+  if [[ "${ENABLE_BUILDX:-0}" == "1" ]]; then
+    if docker buildx version >/dev/null 2>&1; then
+      use_buildx=1
+    else
+      echo "[WARN] --enable-buildx requested but docker buildx isn't available -- using classic docker build" >&2
+    fi
   fi
   pushd "$SCRIPT_DIR"
-  if [[ "$use_buildx" =~ ^[Yy]$ ]]; then
+  if (( use_buildx )); then
     docker buildx build --network=host -f Dockerfile.nvim -t "$BUILD_NAME" \
       --build-arg=BASE_IMAGE="$START_IMAGE" \
       --build-arg=USER_NAME="$USERNAME" \
@@ -101,7 +105,14 @@ grep -qxF "./tmp/" .gitignore 2>/dev/null || echo "./tmp/" >> .gitignore
 
 # Mount the current directory at the same path inside the container, so
 # paths (and things like editor jump-to-file) match on both sides.
+#
+# --hostname makes `docker exec`'d shells identifiable by project (all
+# containers otherwise share the same $USERNAME, e.g. "dev", so the prompt
+# alone can't tell them apart) -- compatible with --network=host on modern
+# Docker (tested against 26.1.3), and an explicit --hostname passed after
+# `--` still wins since it's listed after this in the docker run invocation.
 DOCKER_RUN_OPTS=(-v "$HOMEDIR:$ROOT_DIR:rw" -v "$PWD:$PWD" -w "$PWD" \
+  --hostname="$DOCKER_NAME" \
   --env=TERM=xterm-256color --env=QT_X11_NO_MITSHM=1)
 
 # Optional: add DISPLAY/X11 setup here if needed in future

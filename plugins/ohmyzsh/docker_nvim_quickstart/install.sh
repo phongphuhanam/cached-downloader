@@ -42,7 +42,7 @@ echo -e "${GREEN}✓ Docker found${NC}"
 
 echo -e "${GREEN}✓ Using classic 'docker build' by default${NC}"
 if docker buildx version &> /dev/null; then
-    echo -e "${GREEN}  (docker buildx also detected -- dnvim will ask before using it instead)${NC}\n"
+    echo -e "${GREEN}  (docker buildx also detected -- pass --enable-buildx to use it instead)${NC}\n"
 else
     echo
 fi
@@ -100,10 +100,11 @@ echo "1. Reload your shell: source ~/.zshrc"
 echo "2. Test the plugin: dnvim --help"
 echo ""
 echo "Quick start (run from the project directory you want to develop in):"
-echo "  dnvim python:3.11         # build (first time) and attach"
-echo "  dnvim node:20"
-echo "  dnvim ls                  # list locally-built *.nvim images"
-echo "  dnvim rebuild python:3.11 # force a rebuild"
-echo "  dnvim rm <container-name> # remove a dev container"
+echo "  dnvim python:3.11                    # build (first time) and create"
+echo "  dnvim node:20 -- --network host      # pass flags straight to docker run"
+echo "  dnvim python:3.11 --enable-buildx    # use docker buildx for this build"
+echo "  dnvim ls                             # list locally-built *.nvim images"
+echo "  dnvim rebuild python:3.11            # force a rebuild"
+echo "  dnvim rm <container-name>            # remove a dev container"
 echo ""
 echo "For more info: cat $PLUGIN_DIR/README.md"
