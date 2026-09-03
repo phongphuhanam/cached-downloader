@@ -5,12 +5,12 @@ An Oh My Zsh plugin that drops a Neovim + zsh dev environment on top of **any lo
 ## Features
 
 - **One command, any base image**: `dnvim <image>` builds the nvim layer on top of `<image>` the first time, then reuses it — no manual Dockerfile per project.
-- **Creates only, never manages**: `dnvim` builds images and creates containers — it doesn't attach to, restart, or recreate an existing one. Reconnect with `docker exec` directly, and use `dnvim rm` first if you want to recreate.
-- **Pass-through docker run flags**: anything after `--` (e.g. `--gpus all`, `--network host`) is forwarded straight to `docker run` when creating the container.
+- **Creates, and asks before replacing**: `dnvim` builds images and creates containers — it doesn't silently attach to or recreate an existing one. If a container with the same name already exists (running or stopped), it asks before stopping/removing it and creating a new one; decline and it tells you how to reconnect instead (`docker exec`).
+- **Pass-through docker run flags**: anything after `--` (e.g. `--gpus all`, `--network host`) is forwarded straight to `docker run` when creating the container, with tab completion for the flags themselves.
 - **Same-path project mount**: the current directory is mounted inside the container at the identical path (`-v $PWD:$PWD -w $PWD`), so absolute paths, jump-to-file, and tool output line up on both sides.
 - **Arch-aware toolchain**: Node, Neovim, ripgrep, fd, and yq are each fetched for the host's actual architecture (`amd64`/`arm64`) at build time — same Dockerfile works unmodified on an x86_64 workstation or an arm64 box (e.g. Jetson).
 - **Works with plain `docker build` or `docker buildx`**: the wrapper script detects `buildx` and uses it, falling back to classic `docker build --network=host` otherwise. Native builds only — no QEMU/cross-arch emulation involved.
-- **Tab completion**: `dnvim <TAB>` lists local Docker images the same way `docker run <TAB>` does; `dnvim rm <TAB>` completes running/stopped container names.
+- **Tab completion**: `dnvim <TAB>` lists local Docker images the same way `docker run <TAB>` does; `dnvim rm <TAB>` completes running/stopped container names; after `--`, completion hands off to `docker run`'s own completion (flags like `--network`, `--gpus`, and their values) if it's registered in your shell.
 - **Faster rebuilds**: apt packages are cached via `apt-cacher-ng` (see the parent repo's `docker-compose.yml`) so a base-image bump doesn't force a full re-download of every `.deb`.
 - **No baked-in credentials**: `gh` CLI was deliberately left out of the toolchain — using it from inside a container means passing a GitHub token or config onto whatever machine runs the container, which is a real exposure if that machine is remote or shared. Use SSH-based git auth (mount `~/.ssh` or forward an agent) instead.
 
@@ -54,7 +54,14 @@ dnvim <image> [username] [-- <docker run args>]
 
 Builds the `<image>.nvim` layer if it doesn't exist yet (reused on every later call), then **creates** a container named after the current project directory + image, with the project directory mounted at the same path inside the container. Anything after `--` is passed straight through to `docker run`.
 
-`dnvim` only creates — if a container with that derived name already exists, it errors out and tells you how to reconnect (`docker exec`) or remove it (`dnvim rm`) instead of silently attaching to it or recreating it out from under any `--` flags you passed.
+If a container with that derived name already exists (running or stopped), `dnvim` asks before touching it:
+
+```
+[WARN] Container 'my-app_python_3.11' is already running.
+Stop and remove it, then build/start a new one? [y/N]
+```
+
+Answering `y` stops/removes it and proceeds to build (if needed) and create a fresh one with whatever `--` flags you passed. Answering anything else aborts and tells you how to reconnect (`docker exec`) instead — nothing is touched.
 
 **Examples:**
 ```bash
@@ -97,9 +104,9 @@ dnvim rm <container-name>
 ## How It Works
 
 1. `dnvim` derives a container name from the current directory's basename + the image name (sanitized), so different projects — or the same project against different base images — don't collide.
-2. It checks whether `<image>.nvim` already exists locally (`docker image inspect`); if not, it builds it via `start_docker_nvim.sh`, which uses `docker buildx build --network=host` when buildx is available, or falls back to classic `docker build --network=host`.
-3. If a container with that derived name already exists, `start_docker_nvim.sh` errors out immediately (pointing at `docker exec` / `dnvim rm`) rather than attaching to it or recreating it — `dnvim` only ever creates.
-4. Otherwise, a new container is created with the project directory bind-mounted at the same path (`-v $PWD:$PWD -w $PWD`), a persistent home directory (`.cache/<container-name>/` on the host, mounted as `$HOME` in the container) so shell history, installed nvim plugins, etc. survive container restarts, and any `-- <docker run args>` you passed appended to the `docker run` invocation.
+2. If a container with that derived name already exists (running or stopped), `start_docker_nvim.sh` asks before stopping and removing it (`[y/N]`) rather than silently attaching to it, recreating it out from under any `--` flags, or building an image only to then fail on the name conflict. Declining aborts immediately, before any build happens.
+3. It checks whether `<image>.nvim` already exists locally (`docker image inspect`); if not, it builds it via `start_docker_nvim.sh`, which uses `docker buildx build --network=host` when buildx is available, or falls back to classic `docker build --network=host`.
+4. A new container is created with the project directory bind-mounted at the same path (`-v $PWD:$PWD -w $PWD`), a persistent home directory (`.cache/<container-name>/` on the host, mounted as `$HOME` in the container) so shell history, installed nvim plugins, etc. survive container restarts, and any `-- <docker run args>` you passed appended to the `docker run` invocation.
 5. Inside the image, `Dockerfile.nvim` installs Node, Neovim, ripgrep, fd, yq, and rclone, each resolved to the correct architecture via `dpkg --print-architecture` at build time (not `ARG TARGETARCH`, which only BuildKit populates — this way the same Dockerfile behaves identically under plain `docker build` and `buildx`).
 
 ### Architecture handling
@@ -133,9 +140,9 @@ The plugin locates its supporting scripts relative to its own file path. If you 
 
 `dnvim <image>` reuses the existing `<image>.nvim` image once it's built. Use `dnvim rebuild <image>` to force a fresh build (e.g. after editing `Dockerfile.nvim`).
 
-### "Container '...' already exists"
+### "Container '...' already exists/running" prompt
 
-`dnvim` only creates containers, so a second `dnvim <image>` in the same project (same derived container name) errors out instead of attaching or recreating — this is deliberate, so a `-- <docker run args>` you pass isn't silently dropped on an existing container. Reconnect with `docker exec -it <name> /bin/zsh` (starting it first with `docker start <name>` if it's stopped), or `dnvim rm <name>` to remove it and create a fresh one.
+A second `dnvim <image>` in the same project (same derived container name) asks before stopping/removing the existing container and creating a new one — this is deliberate, so a `-- <docker run args>` you pass isn't silently dropped on an existing container, and so you don't lose a running session by accident. Answer `y` to replace it, or decline and reconnect with `docker exec -it <name> /bin/zsh` (starting it first with `docker start <name>` if it's stopped).
 
 ### apt package installs are slow on every rebuild
 

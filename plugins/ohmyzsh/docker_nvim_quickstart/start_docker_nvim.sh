@@ -47,6 +47,27 @@ if [[ "$MODE" == "build" ]]; then
   exit 0
 fi
 
+# Resolve any name conflict up front, before spending time on a build: if a
+# container with this name already exists (running or stopped), ask before
+# replacing it rather than silently attaching, recreating it out from under
+# extra run flags, or erroring after an otherwise-wasted rebuild.
+if docker ps -a --format '{{.Names}}' | grep -qx "$DOCKER_NAME"; then
+  if [[ "$(docker inspect -f '{{.State.Running}}' "$DOCKER_NAME")" == "true" ]]; then
+    echo "[WARN] Container '$DOCKER_NAME' is already running."
+  else
+    echo "[WARN] Container '$DOCKER_NAME' already exists (stopped)."
+  fi
+  read -r -p "Stop and remove it, then build/start a new one? [y/N] " REPLY
+  if [[ "$REPLY" =~ ^[Yy]$ ]]; then
+    docker rm -f "$DOCKER_NAME" >/dev/null
+    echo "[INFO] Removed existing container: $DOCKER_NAME"
+  else
+    echo "[ERROR] Aborting. Reconnect with: docker exec -it $DOCKER_NAME /bin/zsh" >&2
+    echo "        (start it first if it's stopped: docker start $DOCKER_NAME)" >&2
+    exit 1
+  fi
+fi
+
 if ! docker image inspect "$BUILD_NAME" >/dev/null 2>&1; then
   build_image
 else
@@ -58,17 +79,6 @@ echo "  Container name : $DOCKER_NAME"
 echo "  Base image     : $BUILD_NAME"
 echo "  Mount home dir : $ROOT_DIR"
 echo "  Entry command  : $START_CMD"
-
-# This command only creates containers. If one with this name already
-# exists (running or stopped), stop and point at how to reconnect instead
-# of silently attaching or recreating it out from under extra run flags.
-if docker ps -a --format '{{.Names}}' | grep -qx "$DOCKER_NAME"; then
-  echo "[ERROR] Container '$DOCKER_NAME' already exists." >&2
-  echo "        Reconnect with: docker exec -it $DOCKER_NAME /bin/zsh" >&2
-  echo "        (start it first if it's stopped: docker start $DOCKER_NAME)" >&2
-  echo "        Or remove it and recreate: dnvim rm $DOCKER_NAME" >&2
-  exit 1
-fi
 
 # Ensure persistent volume for container home directory
 CACHE_DIR=".cache/$DOCKER_NAME"

@@ -17,11 +17,27 @@ _docker_nvim_quickstart() {
     case "${words[2]}" in
         rebuild)
             (( CURRENT == 3 )) && _dnvim_images
+            return
             ;;
         rm)
             (( CURRENT == 3 )) && _dnvim_containers
+            return
             ;;
     esac
+
+    # Past a literal "--", hand off to `docker run`'s own completion for
+    # flags/values (--network <TAB>, --gpus <TAB>, ...) -- the same
+    # words-rewrite + _normal handoff zsh's own _sudo/_env/_nice use to
+    # delegate to the wrapped command's completer.
+    local i
+    for (( i = 1; i <= ${#words}; i++ )); do
+        [[ ${words[i]} == "--" ]] && break
+    done
+    if (( i <= ${#words} && CURRENT > i )); then
+        words=(docker run "${(@)words[i+1,-1]}")
+        CURRENT=$(( CURRENT - i + 2 ))
+        _normal
+    fi
 }
 
 _docker_nvim_quickstart
