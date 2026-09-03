@@ -20,16 +20,26 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # $BUILD_NAME is a locally-layered dev image, not something published to a
 # registry, so there's nothing to pull.
+#
+# Classic `docker build` is the default -- this project's caching (the
+# cached-downloader server, apt-cacher-ng) already does the job BuildKit's
+# own cache mounts would, so buildx brings no benefit here and, on a
+# docker-container builder, would just maintain a second, separate build
+# cache on disk. If buildx is available it's opt-in: ask before using it,
+# rather than switching to it automatically.
 build_image() {
   echo "[INFO] Building Docker image: $BUILD_NAME"
-  pushd "$SCRIPT_DIR"
+  local use_buildx=""
   if docker buildx version >/dev/null 2>&1; then
+    read -r -p "docker buildx is available -- use it for this build instead of classic 'docker build'? [y/N] " use_buildx
+  fi
+  pushd "$SCRIPT_DIR"
+  if [[ "$use_buildx" =~ ^[Yy]$ ]]; then
     docker buildx build --network=host -f Dockerfile.nvim -t "$BUILD_NAME" \
       --build-arg=BASE_IMAGE="$START_IMAGE" \
       --build-arg=USER_NAME="$USERNAME" \
       .
   else
-    echo "[INFO] buildx not available, falling back to classic docker build"
     docker build --network=host -f Dockerfile.nvim -t "$BUILD_NAME" \
       --build-arg=BASE_IMAGE="$START_IMAGE" \
       --build-arg=USER_NAME="$USERNAME" \

@@ -40,10 +40,11 @@ if ! command -v docker &> /dev/null; then
 fi
 echo -e "${GREEN}✓ Docker found${NC}"
 
+echo -e "${GREEN}✓ Using classic 'docker build' by default${NC}"
 if docker buildx version &> /dev/null; then
-    echo -e "${GREEN}✓ docker buildx found (used when available; falls back to classic docker build)${NC}\n"
+    echo -e "${GREEN}  (docker buildx also detected -- dnvim will ask before using it instead)${NC}\n"
 else
-    echo -e "${YELLOW}⚠ docker buildx not found — will fall back to classic 'docker build'${NC}\n"
+    echo
 fi
 
 # Installation

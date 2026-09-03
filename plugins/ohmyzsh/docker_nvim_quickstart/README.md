@@ -9,7 +9,7 @@ An Oh My Zsh plugin that drops a Neovim + zsh dev environment on top of **any lo
 - **Pass-through docker run flags**: anything after `--` (e.g. `--gpus all`, `--network host`) is forwarded straight to `docker run` when creating the container, with tab completion for the flags themselves.
 - **Same-path project mount**: the current directory is mounted inside the container at the identical path (`-v $PWD:$PWD -w $PWD`), so absolute paths, jump-to-file, and tool output line up on both sides.
 - **Arch-aware toolchain**: Node, Neovim, ripgrep, fd, and yq are each fetched for the host's actual architecture (`amd64`/`arm64`) at build time — same Dockerfile works unmodified on an x86_64 workstation or an arm64 box (e.g. Jetson).
-- **Works with plain `docker build` or `docker buildx`**: the wrapper script detects `buildx` and uses it, falling back to classic `docker build --network=host` otherwise. Native builds only — no QEMU/cross-arch emulation involved.
+- **Classic `docker build` by default**: this project's own caching (`cached_download`, `apt-cacher-ng`) already does what BuildKit's cache mounts would, so buildx brings no benefit here — and on a `docker-container` builder it would maintain a second, separate build cache on disk. If `docker buildx` is available it's opt-in: `dnvim` asks before using it instead of switching automatically. Native builds only — no QEMU/cross-arch emulation involved.
 - **Tab completion**: `dnvim <TAB>` lists local Docker images the same way `docker run <TAB>` does; `dnvim rm <TAB>` completes running/stopped container names; after `--`, completion hands off to `docker run`'s own completion (flags like `--network`, `--gpus`, and their values) if it's registered in your shell.
 - **Faster rebuilds**: apt packages are cached via `apt-cacher-ng` (see the parent repo's `docker-compose.yml`) so a base-image bump doesn't force a full re-download of every `.deb`.
 - **No baked-in credentials**: `gh` CLI was deliberately left out of the toolchain — using it from inside a container means passing a GitHub token or config onto whatever machine runs the container, which is a real exposure if that machine is remote or shared. Use SSH-based git auth (mount `~/.ssh` or forward an agent) instead.
@@ -17,7 +17,7 @@ An Oh My Zsh plugin that drops a Neovim + zsh dev environment on top of **any lo
 ## Prerequisites
 
 - **Oh My Zsh** — [Installation guide](https://ohmyz.sh/#install)
-- **Docker** — with `buildx` available if you want it used automatically (falls back to classic `docker build` otherwise)
+- **Docker** — classic `docker build` is all that's required; `buildx` is optional and only ever used if you say yes to the prompt when it's detected
 - *(optional)* **apt-cacher-ng** running at `localhost:3142` — `docker compose up apt-cacher-ng` from the [cached-downloader](../../..) repo root, to speed up apt package fetches across rebuilds
 
 ### Verify Prerequisites
@@ -105,7 +105,7 @@ dnvim rm <container-name>
 
 1. `dnvim` derives a container name from the current directory's basename + the image name (sanitized), so different projects — or the same project against different base images — don't collide.
 2. If a container with that derived name already exists (running or stopped), `start_docker_nvim.sh` asks before stopping and removing it (`[y/N]`) rather than silently attaching to it, recreating it out from under any `--` flags, or building an image only to then fail on the name conflict. Declining aborts immediately, before any build happens.
-3. It checks whether `<image>.nvim` already exists locally (`docker image inspect`); if not, it builds it via `start_docker_nvim.sh`, which uses `docker buildx build --network=host` when buildx is available, or falls back to classic `docker build --network=host`.
+3. It checks whether `<image>.nvim` already exists locally (`docker image inspect`); if not, it builds it via `start_docker_nvim.sh`, which uses classic `docker build --network=host` by default. If `docker buildx` is available, it asks first (`[y/N]`) before using `docker buildx build --network=host` instead.
 4. A new container is created with the project directory bind-mounted at the same path (`-v $PWD:$PWD -w $PWD`), a persistent home directory (`.cache/<container-name>/` on the host, mounted as `$HOME` in the container) so shell history, installed nvim plugins, etc. survive container restarts, and any `-- <docker run args>` you passed appended to the `docker run` invocation.
 5. Inside the image, `Dockerfile.nvim` installs Node, Neovim, ripgrep, fd, yq, and rclone, each resolved to the correct architecture via `dpkg --print-architecture` at build time (not `ARG TARGETARCH`, which only BuildKit populates — this way the same Dockerfile behaves identically under plain `docker build` and `buildx`).
 
