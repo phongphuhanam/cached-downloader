@@ -88,9 +88,14 @@ _dnvim_images() {
   if (( $+functions[__docker_complete_images] )); then
     __docker_complete_images
   else
+    # compadd, not _describe: _describe treats a colon in each candidate as
+    # the value/description separator, which mangles any image reference
+    # with a colon (repo:tag, or a registry host:port like
+    # localhost:25000/repo:tag) -- it would offer "localhost" as the
+    # candidate and silently drop the rest.
     local -a images
     images=(${(f)"$(docker images --format '{{.Repository}}:{{.Tag}}' 2>/dev/null | grep -v '\.nvim$')"})
-    _describe -t docker-images 'docker image' images
+    compadd -a images
   fi
 }
 
@@ -100,6 +105,6 @@ _dnvim_containers() {
   else
     local -a containers
     containers=(${(f)"$(docker ps -a --format '{{.Names}}' 2>/dev/null)"})
-    _describe -t docker-containers 'container' containers
+    compadd -a containers
   fi
 }
