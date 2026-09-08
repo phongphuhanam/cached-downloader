@@ -130,16 +130,18 @@ Only native builds are supported (whatever architecture the build actually runs 
 
 ### Shared oh-my-zsh / nvim config / plugins
 
-`entrypoint_omz.sh` `git clone`s oh-my-zsh and your nvim config on first boot if missing, and nvim's own plugin manager populates `~/.local/share/nvim` (plugins, LSP servers, treesitter parsers — often the largest piece by far) the first time you actually launch nvim. All three are identical across every container for a given username, regardless of which project they're started from, so `start_docker_nvim.sh` mounts them from one shared location instead of `.cache/<container-name>/`:
+`entrypoint_omz.sh` `git clone`s oh-my-zsh and your nvim config on first boot if missing, and nvim's own plugin manager populates `~/.local/share/nvim` (plugins, LSP servers, treesitter parsers — often the largest piece by far) the first time you actually launch nvim. `NVIM_CONFIG_URL`/`NVIM_CONFIG_BRANCH` are fixed in `Dockerfile.nvim`, so all three are identical across every container built from it regardless of `$USERNAME` or image, so `start_docker_nvim.sh` mounts them from one shared location instead of `.cache/<container-name>/`:
 
 ```
-plugins/ohmyzsh/docker_nvim_quickstart/.shared-home/<username>/
+plugins/ohmyzsh/docker_nvim_quickstart/.shared-home/<real host account>/
   oh-my-zsh/     -> $HOME/.oh-my-zsh
   config-nvim/   -> $HOME/.config/nvim
   share-nvim/    -> $HOME/.local/share/nvim
 ```
 
-The first container for a given username populates it; every later container for that username (any project, any container name) reuses it immediately — nothing re-downloaded, no extra disk copy. Everything else under `$HOME` (shell history, project-specific dotfile tweaks) still lives in the regular per-project `.cache/<container-name>/`, untouched by this. Gitignored automatically the same way `.cache/` is.
+Keyed by the real host account (`id -un`), not the in-container `$USERNAME`: containers always run as that host account's UID:GID (`--user "$(id -u):$(id -g)"`), which is what actually determines file ownership, so two `dnvim` images built with different `$USERNAME`s (`dev` vs `devkortek`, say) still correctly share one copy — while a genuinely different account on a shared host gets its own, avoiding permission errors from mismatched ownership.
+
+The first container for your account populates it; every later container (any project, any container name, any `$USERNAME`) reuses it immediately — nothing re-downloaded, no extra disk copy. Everything else under `$HOME` (shell history, project-specific dotfile tweaks) still lives in the regular per-project `.cache/<container-name>/`, untouched by this. Gitignored automatically the same way `.cache/` is.
 
 ## Prerequisites for Base Images
 
@@ -171,7 +173,7 @@ Start `apt-cacher-ng` (`docker compose up apt-cacher-ng` from the [cached-downlo
 
 - **No `gh` CLI in the image**: avoids the choice between copying a GitHub token onto the container's host or leaving the container unauthenticated. If you need `gh`, install it ad hoc inside a running container rather than baking it (and a token) into the image.
 - **rclone is included but unconfigured**: pass credentials at `docker run` time via `RCLONE_CONFIG_<REMOTE>_*` environment variables (see `rclone config providers`/`rclone obscure`) rather than baking a `rclone.conf` into the image or the persistent per-container home volume — that way nothing sensitive travels with the image or `.cache/` if it's ever copied to another machine.
-- **Persistent home volume**: `.cache/<container-name>/` (mounted as `$HOME`) persists shell state and anything else written under `$HOME` across container restarts — including any secrets you configure interactively inside the container. Treat it like any other local credential store. `~/.oh-my-zsh`, `~/.config/nvim`, and `~/.local/share/nvim` specifically live in `.shared-home/<username>/` instead (see "Shared oh-my-zsh / nvim config / plugins" above) and are shared across every project for that username — don't put project-specific secrets in your nvim config expecting it to stay scoped to one project.
+- **Persistent home volume**: `.cache/<container-name>/` (mounted as `$HOME`) persists shell state and anything else written under `$HOME` across container restarts — including any secrets you configure interactively inside the container. Treat it like any other local credential store. `~/.oh-my-zsh`, `~/.config/nvim`, and `~/.local/share/nvim` specifically live in `.shared-home/<real host account>/` instead (see "Shared oh-my-zsh / nvim config / plugins" above) and are shared across every project and `$USERNAME` for that host account — don't put project-specific secrets in your nvim config expecting it to stay scoped to one project.
 
 ## License
 

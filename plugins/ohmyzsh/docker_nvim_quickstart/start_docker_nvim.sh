@@ -106,17 +106,28 @@ grep -qxF "./tmp/" .gitignore 2>/dev/null || echo "./tmp/" >> .gitignore
 # oh-my-zsh core, the nvim config repo, and nvim's own plugin/LSP/
 # treesitter directory (entrypoint_omz.sh git-clones the first two on
 # first boot if missing; nvim's plugin manager populates the third on
-# first real launch) are identical across every container for a given
-# $USERNAME, regardless of which project's $HOMEDIR they'd otherwise land
-# in -- nvim's plugin dir especially can run into the hundreds of MB.
-# Sharing one copy across projects instead of paying for it per project
-# avoids re-downloading and re-storing it every time. entrypoint_omz.sh's
-# own "clone if missing" check already makes this a no-op once populated.
+# first real launch) are identical across every container that shares the
+# same NVIM_CONFIG_URL/NVIM_CONFIG_BRANCH (fixed in Dockerfile.nvim,
+# regardless of $USERNAME) -- nvim's plugin dir especially can run into
+# the hundreds of MB. Sharing one copy across projects instead of paying
+# for it per project avoids re-downloading and re-storing it every time.
+# entrypoint_omz.sh's own "clone if missing" check already makes this a
+# no-op once populated.
+#
+# Keyed by the real host account (id -un), not $USERNAME: $USERNAME is
+# just the in-container display name and can differ per project/image
+# while every container still runs as the same host user via
+# `--user "$(id -u):$(id -g)"` -- keying by $USERNAME would silently
+# fragment the cache across labels that all resolve to identical file
+# ownership on disk. Keying by the real host account instead still keeps
+# genuinely different accounts on a shared host from colliding (their
+# containers run as different UID:GID, so they'd hit permission errors
+# writing into each other's cache).
 #
 # $SCRIPT_DIR (this script's own directory), not $DOCKER_NVIM_HOME: the
 # zsh plugin variable of that name isn't exported, so it wouldn't survive
 # into this bash script's environment.
-SHARED_HOME="$SCRIPT_DIR/.shared-home/$USERNAME"
+SHARED_HOME="$SCRIPT_DIR/.shared-home/$(id -un)"
 mkdir -p "$SHARED_HOME/oh-my-zsh" "$SHARED_HOME/config-nvim" "$SHARED_HOME/share-nvim"
 grep -qxF ".shared-home/" "$SCRIPT_DIR/.gitignore" 2>/dev/null || echo ".shared-home/" >> "$SCRIPT_DIR/.gitignore"
 
