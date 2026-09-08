@@ -18,7 +18,12 @@ _docker_nvim_quickstart() {
         rebuild)
             if (( CURRENT == 3 )); then
                 _dnvim_images
-            elif (( CURRENT == 4 )); then
+            else
+                # Position 4+: an optional username and/or --enable-buildx,
+                # in either order -- offer the flag, let username be typed
+                # free-form (must match whatever containers from this image
+                # actually run with, or rebuild will bake in a different
+                # OS user and orphan any existing $HOMEDIR mount).
                 compadd -- --enable-buildx
             fi
             return

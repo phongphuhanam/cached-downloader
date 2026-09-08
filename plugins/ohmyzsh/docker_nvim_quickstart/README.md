@@ -84,10 +84,12 @@ docker exec -it my-app_python_3.11 /bin/zsh
 ### Force a rebuild
 
 ```bash
-dnvim rebuild <image> [--enable-buildx]
+dnvim rebuild <image> [username] [--enable-buildx]
 ```
 
 Rebuilds the nvim layer for `<image>` even if it already exists locally, and stops there — it does not create or touch any container. Use this after changing `Dockerfile.nvim` or to pick up newer pinned tool versions, then `dnvim rm` an existing container before creating a fresh one from the rebuilt image.
+
+**`username` must match what you actually run containers with** (default `dev`, same default as `dnvim <image>` itself). Rebuilding bakes a fresh OS user + fixuid config into the image; passing a different username than your `dnvim <image> <username> ...` invocations use silently replaces the image's user, and the existing `$HOMEDIR` bind mount then targets a dead `/home/<old-username>` that nothing inside the container ever writes to — files you create just vanish with the container.
 
 ### List built images
 

@@ -32,7 +32,7 @@ dnvim() {
   case "${1:-}" in
     ""|-h|--help)
       echo "usage: dnvim <image> [username] [--enable-buildx] [-- <docker run args>]" >&2
-      echo "       dnvim rebuild <image> [--enable-buildx] | dnvim ls | dnvim rm <container-name>" >&2
+      echo "       dnvim rebuild <image> [username] [--enable-buildx] | dnvim ls | dnvim rm <container-name>" >&2
       return 1
       ;;
     ls)
@@ -47,10 +47,24 @@ dnvim() {
     rebuild)
       local image="${2:?usage: dnvim rebuild <image>}"
       shift 2
-      local enable_buildx=0
-      [[ "${1:-}" == "--enable-buildx" ]] && enable_buildx=1
-      # Rebuilds the image only -- does not touch any container.
-      _dnvim_run "$image" build dev "$enable_buildx"
+      local username="dev" enable_buildx=0
+      # Leading options in any order, same convention as the run path below.
+      while [[ $# -gt 0 ]]; do
+        if [[ "$1" == "--enable-buildx" ]]; then
+          enable_buildx=1
+        else
+          username="$1"
+        fi
+        shift
+      done
+      # Rebuilds the image only -- does not touch any container. Must match
+      # whatever username containers from this image actually run with:
+      # rebuilding bakes a fresh OS user + fixuid config, so a mismatched
+      # username here silently replaces it -- any existing $HOMEDIR bind
+      # mount then targets a dead, unowned /home/<old-username> instead of
+      # the real (now differently-named) home directory, and nothing
+      # written inside the container ever reaches the host.
+      _dnvim_run "$image" build "$username" "$enable_buildx"
       return
       ;;
   esac
