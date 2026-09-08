@@ -112,7 +112,7 @@ dnvim rm <container-name>
 1. `dnvim` derives a container name from the current directory's basename + the image name (sanitized), so different projects — or the same project against different base images — don't collide.
 2. If a container with that derived name already exists (running or stopped), `start_docker_nvim.sh` asks before stopping and removing it (`[y/N]`) rather than silently attaching to it, recreating it out from under any `--` flags, or building an image only to then fail on the name conflict. Declining aborts immediately, before any build happens.
 3. It checks whether `<image>.nvim` already exists locally (`docker image inspect`); if not, it builds it via `start_docker_nvim.sh`, which uses classic `docker build --network=host` by default, or `docker buildx build --network=host` if you passed `--enable-buildx` (and buildx is actually installed — otherwise it warns and uses classic build anyway).
-4. A new container is created with the project directory bind-mounted at the same path (`-v $PWD:$PWD -w $PWD`), a persistent home directory (`.cache/<container-name>/` on the host, mounted as `$HOME` in the container) so shell history, installed nvim plugins, etc. survive container restarts, `--hostname` set to the same derived container name, and any `-- <docker run args>` you passed appended last (so an explicit `--hostname` you pass overrides the default).
+4. A new container is created with the project directory bind-mounted at the same path (`-v $PWD:$PWD -w $PWD`), a persistent home directory (`.cache/<container-name>/` on the host, mounted as `$HOME` in the container) so shell history etc. survive container restarts, plus three shared mounts layered on top of it for `$HOME/.oh-my-zsh`, `$HOME/.config/nvim`, and `$HOME/.local/share/nvim` (see "Shared oh-my-zsh / nvim config / plugins" below), `--hostname` set to the same derived container name, and any `-- <docker run args>` you passed appended last (so an explicit `--hostname` you pass overrides the default).
 5. Inside the image, `Dockerfile.nvim` installs Node, Neovim, ripgrep, fd, yq, and rclone, each resolved to the correct architecture via `dpkg --print-architecture` at build time (not `ARG TARGETARCH`, which only BuildKit populates — this way the same Dockerfile behaves identically under plain `docker build` and `buildx`).
 
 ### Architecture handling
@@ -127,6 +127,19 @@ dnvim rm <container-name>
 | rclone | `...-linux-amd64.deb` | `...-linux-arm64.deb` | `.deb` |
 
 Only native builds are supported (whatever architecture the build actually runs on) — no `--platform`/QEMU cross-building.
+
+### Shared oh-my-zsh / nvim config / plugins
+
+`entrypoint_omz.sh` `git clone`s oh-my-zsh and your nvim config on first boot if missing, and nvim's own plugin manager populates `~/.local/share/nvim` (plugins, LSP servers, treesitter parsers — often the largest piece by far) the first time you actually launch nvim. All three are identical across every container for a given username, regardless of which project they're started from, so `start_docker_nvim.sh` mounts them from one shared location instead of `.cache/<container-name>/`:
+
+```
+plugins/ohmyzsh/docker_nvim_quickstart/.shared-home/<username>/
+  oh-my-zsh/     -> $HOME/.oh-my-zsh
+  config-nvim/   -> $HOME/.config/nvim
+  share-nvim/    -> $HOME/.local/share/nvim
+```
+
+The first container for a given username populates it; every later container for that username (any project, any container name) reuses it immediately — nothing re-downloaded, no extra disk copy. Everything else under `$HOME` (shell history, project-specific dotfile tweaks) still lives in the regular per-project `.cache/<container-name>/`, untouched by this. Gitignored automatically the same way `.cache/` is.
 
 ## Prerequisites for Base Images
 
@@ -158,7 +171,7 @@ Start `apt-cacher-ng` (`docker compose up apt-cacher-ng` from the [cached-downlo
 
 - **No `gh` CLI in the image**: avoids the choice between copying a GitHub token onto the container's host or leaving the container unauthenticated. If you need `gh`, install it ad hoc inside a running container rather than baking it (and a token) into the image.
 - **rclone is included but unconfigured**: pass credentials at `docker run` time via `RCLONE_CONFIG_<REMOTE>_*` environment variables (see `rclone config providers`/`rclone obscure`) rather than baking a `rclone.conf` into the image or the persistent per-container home volume — that way nothing sensitive travels with the image or `.cache/` if it's ever copied to another machine.
-- **Persistent home volume**: `.cache/<container-name>/` (mounted as `$HOME`) persists shell state, nvim plugins, and anything else written under `$HOME` across container restarts — including any secrets you configure interactively inside the container. Treat it like any other local credential store.
+- **Persistent home volume**: `.cache/<container-name>/` (mounted as `$HOME`) persists shell state and anything else written under `$HOME` across container restarts — including any secrets you configure interactively inside the container. Treat it like any other local credential store. `~/.oh-my-zsh`, `~/.config/nvim`, and `~/.local/share/nvim` specifically live in `.shared-home/<username>/` instead (see "Shared oh-my-zsh / nvim config / plugins" above) and are shared across every project for that username — don't put project-specific secrets in your nvim config expecting it to stay scoped to one project.
 
 ## License
 

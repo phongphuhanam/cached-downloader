@@ -103,6 +103,23 @@ HOMEDIR=$(realpath "$CACHE_DIR")
 grep -qxF ".cache/" .gitignore 2>/dev/null || echo ".cache/" >> .gitignore
 grep -qxF "./tmp/" .gitignore 2>/dev/null || echo "./tmp/" >> .gitignore
 
+# oh-my-zsh core, the nvim config repo, and nvim's own plugin/LSP/
+# treesitter directory (entrypoint_omz.sh git-clones the first two on
+# first boot if missing; nvim's plugin manager populates the third on
+# first real launch) are identical across every container for a given
+# $USERNAME, regardless of which project's $HOMEDIR they'd otherwise land
+# in -- nvim's plugin dir especially can run into the hundreds of MB.
+# Sharing one copy across projects instead of paying for it per project
+# avoids re-downloading and re-storing it every time. entrypoint_omz.sh's
+# own "clone if missing" check already makes this a no-op once populated.
+#
+# $SCRIPT_DIR (this script's own directory), not $DOCKER_NVIM_HOME: the
+# zsh plugin variable of that name isn't exported, so it wouldn't survive
+# into this bash script's environment.
+SHARED_HOME="$SCRIPT_DIR/.shared-home/$USERNAME"
+mkdir -p "$SHARED_HOME/oh-my-zsh" "$SHARED_HOME/config-nvim" "$SHARED_HOME/share-nvim"
+grep -qxF ".shared-home/" "$SCRIPT_DIR/.gitignore" 2>/dev/null || echo ".shared-home/" >> "$SCRIPT_DIR/.gitignore"
+
 # Mount the current directory at the same path inside the container, so
 # paths (and things like editor jump-to-file) match on both sides.
 #
@@ -111,7 +128,16 @@ grep -qxF "./tmp/" .gitignore 2>/dev/null || echo "./tmp/" >> .gitignore
 # alone can't tell them apart) -- compatible with --network=host on modern
 # Docker (tested against 26.1.3), and an explicit --hostname passed after
 # `--` still wins since it's listed after this in the docker run invocation.
-DOCKER_RUN_OPTS=(-v "$HOMEDIR:$ROOT_DIR:rw" -v "$PWD:$PWD" -w "$PWD" \
+#
+# The three shared mounts are listed after the per-project $HOMEDIR mount
+# and target subdirectories of it ($ROOT_DIR/.oh-my-zsh etc.) -- Docker
+# mounts nested paths fine regardless of flag order, so these three simply
+# take over their own subtree instead of the per-project one underneath.
+DOCKER_RUN_OPTS=(-v "$HOMEDIR:$ROOT_DIR:rw" \
+  -v "$SHARED_HOME/oh-my-zsh:$ROOT_DIR/.oh-my-zsh:rw" \
+  -v "$SHARED_HOME/config-nvim:$ROOT_DIR/.config/nvim:rw" \
+  -v "$SHARED_HOME/share-nvim:$ROOT_DIR/.local/share/nvim:rw" \
+  -v "$PWD:$PWD" -w "$PWD" \
   --hostname="$DOCKER_NAME" \
   --env=TERM=xterm-256color --env=QT_X11_NO_MITSHM=1)
 
