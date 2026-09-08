@@ -21,4 +21,11 @@ services:
       - "3142:3142"
     volumes:
       - ./.apt-cache/:/var/cache/apt-cacher-ng/:rw
+      # Opt-in upstream proxy for apt-cacher-ng's own downloads -- see the
+      # file's own comment. Committed empty/commented-out; a host whose
+      # network intercepts direct fetches (e.g. a captive portal poisoning
+      # the cache with login-page HTML instead of real .deb files) edits
+      # its local copy to point at a working proxy, uncommitted, since
+      # that's host/network specific, not something every PC needs.
+      - ./zz_upstream_proxy.conf:/etc/apt-cacher-ng/zz_upstream_proxy.conf:ro
     restart: unless-stopped
