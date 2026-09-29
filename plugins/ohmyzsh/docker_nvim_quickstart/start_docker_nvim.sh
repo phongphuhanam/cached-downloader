@@ -115,7 +115,6 @@ fi
 echo "[INFO] Preparing container:"
 echo "  Container name : $DOCKER_NAME"
 echo "  Base image     : $BUILD_NAME"
-echo "  Mount home dir : $ROOT_DIR"
 echo "  Entry command  : $START_CMD"
 
 # Ensure persistent volume for container home directory
@@ -177,6 +176,43 @@ DOCKER_RUN_OPTS=(-v "$HOMEDIR:$ROOT_DIR:rw" \
   --env=TERM=xterm-256color --env=QT_X11_NO_MITSHM=1)
 
 # Optional: add DISPLAY/X11 setup here if needed in future
+
+# List every bind mount -- dnvim's own plus any -v/--volume/--mount passed
+# after `--` -- so a wrong host path or container path is visible before
+# the container starts rather than discovered as missing files later.
+print_mounts() {
+  local args=("$@") i=0 a spec
+  echo "[INFO] Mounts (host -> container):"
+  while (( i < ${#args[@]} )); do
+    a="${args[i]}"
+    spec=""
+    case "$a" in
+      -v|--volume|--mount) spec="${args[i+1]:-}"; i=$((i + 1)) ;;
+      -v*)                 spec="${a#-v}" ;;
+      --volume=*|--mount=*) spec="${a#*=}" ;;
+    esac
+    if [[ -n "$spec" ]]; then
+      if [[ "$a" == --mount* ]]; then
+        echo "  $spec"
+      else
+        IFS=: read -r src dst opts <<<"$spec"
+        echo "  $src -> $dst${opts:+ ($opts)}"
+      fi
+    fi
+    i=$((i + 1))
+  done
+}
+print_mounts "${DOCKER_RUN_OPTS[@]}" "${EXTRA_OPTS[@]}"
+
+# Images built before $HOME was pinned to /config still have
+# HOME=/home/<username>: the home mount above would then sit next to
+# $HOME instead of on it, and everything written under $HOME (oh-my-zsh,
+# .zshrc, history) would be lost with the container.
+IMAGE_HOME="$(docker image inspect -f '{{range .Config.Env}}{{println .}}{{end}}' "$BUILD_NAME" | sed -n 's/^HOME=//p')"
+if [[ "$IMAGE_HOME" != "$ROOT_DIR" ]]; then
+  echo "[WARN] $BUILD_NAME has HOME=${IMAGE_HOME:-<unset>}, but the home dir is mounted at $ROOT_DIR --" >&2
+  echo "       nothing written under \$HOME will persist. Rebuild it: dnvim rebuild $START_IMAGE $USERNAME" >&2
+fi
 
 echo "[INFO] Starting Docker container: $DOCKER_NAME"
 docker run --init -it "${DOCKER_RUN_OPTS[@]}" "${EXTRA_OPTS[@]}" \
