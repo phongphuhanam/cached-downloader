@@ -52,18 +52,29 @@ dnvim() {
       while [[ $# -gt 0 ]]; do
         if [[ "$1" == "--enable-buildx" ]]; then
           enable_buildx=1
+        elif [[ "$1" == "--" ]]; then
+          # rebuild never creates a container, so docker run args have
+          # nowhere to go -- refuse rather than misparse them as the
+          # username (the last one, e.g. "-t", would otherwise win).
+          echo "dnvim rebuild: doesn't take docker run args ('-- ...'); rebuild first, then run:" >&2
+          echo "  dnvim rebuild $image${username:+ $username}" >&2
+          echo "  dnvim $image${username:+ $username} -- <docker run args>" >&2
+          return 1
+        elif [[ "$1" == -* ]]; then
+          echo "dnvim rebuild: unknown option '$1'" >&2
+          return 1
         else
           username="$1"
         fi
         shift
       done
-      # Rebuilds the image only -- does not touch any container. Must match
-      # whatever username containers from this image actually run with:
-      # rebuilding bakes a fresh OS user + fixuid config, so a mismatched
-      # username here silently replaces it -- any existing $HOMEDIR bind
-      # mount then targets a dead, unowned /home/<old-username> instead of
-      # the real (now differently-named) home directory, and nothing
-      # written inside the container ever reaches the host.
+      # Rebuilds the image only -- does not touch any container. Should
+      # match whatever username containers from this image are created
+      # with: rebuilding bakes a fresh OS user + fixuid config, so a
+      # mismatched username silently replaces the image's account and
+      # fixuid will chown to the wrong one on the next container boot.
+      # The $HOME mount itself is unaffected -- Dockerfile.nvim pins
+      # $HOME at /config regardless of username.
       _dnvim_run "$image" build "$username" "$enable_buildx"
       return
       ;;
@@ -78,6 +89,9 @@ dnvim() {
   while [[ $# -gt 0 && "$1" != "--" ]]; do
     if [[ "$1" == "--enable-buildx" ]]; then
       enable_buildx=1
+    elif [[ "$1" == -* ]]; then
+      echo "dnvim: unknown option '$1' (docker run args go after '--')" >&2
+      return 1
     else
       username="$1"
     fi

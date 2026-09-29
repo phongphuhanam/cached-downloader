@@ -15,7 +15,11 @@ START_CMD="/bin/bash"
 MODE="${4:-run}"
 EXTRA_OPTS=("${@:5}")
 
-ROOT_DIR="/home/$USERNAME"
+# In-container home mount point. Fixed at /config regardless of $USERNAME
+# (Dockerfile.nvim pins ENV HOME=/config and the OS account's home), so the
+# mount layout is identical no matter which username a container was
+# created with.
+ROOT_DIR="/config"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # $BUILD_NAME is a locally-layered dev image, not something published to a
@@ -82,7 +86,27 @@ if docker ps -a --format '{{.Names}}' | grep -qx "$DOCKER_NAME"; then
   fi
 fi
 
+image_layers() {
+  docker image inspect -f '{{range .RootFS.Layers}}{{println .}}{{end}}' "$1" 2>/dev/null
+}
+
+# True if $BUILD_NAME was layered on top of the base image $START_IMAGE
+# currently points at. A derived image's layer list always starts with its
+# base's exact layer list (content digests, so this holds for classic build
+# and buildx alike, and for images built before this check existed), so if
+# the tag has since moved to a new base, the prefix no longer matches. If
+# the base isn't available locally there's nothing to compare against --
+# treat that as current rather than forcing a build that would have to pull.
+base_is_current() {
+  local base_layers
+  base_layers="$(image_layers "$START_IMAGE")" || return 0
+  [[ "$(image_layers "$BUILD_NAME")" == "$base_layers"* ]]
+}
+
 if ! docker image inspect "$BUILD_NAME" >/dev/null 2>&1; then
+  build_image
+elif ! base_is_current; then
+  echo "[INFO] Base image $START_IMAGE changed since $BUILD_NAME was built -- rebuilding"
   build_image
 else
   echo "[INFO] Reusing existing image: $BUILD_NAME"

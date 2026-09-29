@@ -102,14 +102,19 @@ RUN ARCH="$(dpkg --print-architecture)" && \
 RUN cached_download https://gist.githubusercontent.com/phongphuhanam/16df05ca0a2ba522f19869016032489d/raw/pull_latest_nvim_config.sh /usr/local/bin/pull_latest_nvim_config.sh
 RUN chmod +x /usr/local/bin/pull_latest_nvim_config.sh
 
+# $USERNAME is only the OS account name (default `dev`) -- it names the
+# login account, sudoers entry, and fixuid config. It does NOT determine
+# where $HOME is: $HOME is fixed at /config (below), so the host-side bind
+# mount list is identical no matter which username the image was built
+# with (see start_docker_nvim.sh).
 ARG USER_NAME=dev
 ENV USERNAME $USER_NAME
-ENV HOME /home/$USERNAME
+ENV HOME /config
 ARG USERID=1000
 ARG GROUPID=1000
 # Replace 1000 with your user/group id
 #
-RUN if getent passwd "$USERNAME" > /dev/null 2>&1; then echo "User $USERNAME already exists." && exit 0; else useradd -m $USERNAME && echo "$USERNAME:$USERNAME" | chpasswd && usermod --shell /bin/zsh $USERNAME && usermod -aG sudo $USERNAME && mkdir -p /etc/sudoers.d && echo "$USERNAME ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers.d/$USERNAME && chmod 0440 /etc/sudoers.d/$USERNAME; fi
+RUN if getent passwd "$USERNAME" > /dev/null 2>&1; then echo "User $USERNAME already exists." && exit 0; else useradd -m -d /config $USERNAME && echo "$USERNAME:$USERNAME" | chpasswd && usermod --shell /bin/zsh $USERNAME && usermod -aG sudo $USERNAME && mkdir -p /etc/sudoers.d && echo "$USERNAME ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers.d/$USERNAME && chmod 0440 /etc/sudoers.d/$USERNAME; fi
 
 #
 RUN ARCH="$(dpkg --print-architecture)" && cached_download "https://github.com/boxboat/fixuid/releases/download/v0.6.0/fixuid-0.6.0-linux-$ARCH.tar.gz" /tmp/fixuid.tar.gz && tar -C /usr/local/bin -xzf /tmp/fixuid.tar.gz && rm /tmp/fixuid.tar.gz && chown root:root /usr/local/bin/fixuid && chmod 4755 /usr/local/bin/fixuid && mkdir -p /etc/fixuid && printf "user: $USERNAME\ngroup: $USERNAME\n" > /etc/fixuid/config.yml
@@ -126,6 +131,6 @@ RUN chmod +x /opt/entrypoint_omz.sh
 
 
 USER ${USERNAME}
-# WORKDIR /home/${USERNAME}
+# WORKDIR /config
 # Enable this line if fixuid is used.
 ENTRYPOINT ["/opt/entrypoint_omz.sh"]
