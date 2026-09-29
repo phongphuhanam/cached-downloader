@@ -108,8 +108,12 @@ _dnvim_run() {
   # projects (or the same project against different base images) don't
   # collide. dnvim only creates -- it errors if this name already exists
   # rather than attaching or recreating it (see start_docker_nvim.sh).
-  local safe_image="${image//[:\/]/_}"
-  local container_name="${PWD:t}_${safe_image}"
+  # Only the image's last path component (name:tag) is kept -- the
+  # registry host/namespace (e.g. localhost:25000/dlmotor/) just makes the
+  # name long without telling containers apart in practice. The nvim_
+  # prefix marks it as a dnvim container in `docker ps`.
+  local safe_image="${${image:t}//[:@]/_}"
+  local container_name="nvim_${PWD:t}_${safe_image}"
 
   ENABLE_BUILDX="$enable_buildx" "$DOCKER_NVIM_HOME/start_docker_nvim.sh" "$image" "$username" "$container_name" "$mode" "$@"
 }
