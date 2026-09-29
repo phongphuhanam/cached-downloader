@@ -17,6 +17,21 @@ services:
   apt-cacher-ng:
     image: sameersbn/apt-cacher-ng:latest
     init: true
+    # apt-cacher-ng only logs to files under /var/log/apt-cacher-ng/, so
+    # `docker logs` would stay empty. Stream them to the container's
+    # stdout/stderr instead (-n0: no replay of old lines on restart), and
+    # UnbufferLogs=1 so each request shows up immediately rather than when
+    # apt-cacher-ng gets around to flushing. The image's own entrypoint
+    # still does its usual setup and privilege drop. `$$` is compose's
+    # escape for a literal `$`.
+    entrypoint:
+      - /bin/bash
+      - -c
+      - |
+        d=/var/log/apt-cacher-ng
+        tail -n0 -F "$$d/apt-cacher.log" 2>/dev/null &
+        tail -n0 -F "$$d/apt-cacher.err" >&2 2>/dev/null &
+        exec /sbin/entrypoint.sh apt-cacher-ng UnbufferLogs=1
     ports:
       - "3142:3142"
     volumes:
