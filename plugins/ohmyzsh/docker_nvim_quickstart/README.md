@@ -78,7 +78,7 @@ dnvim nvcr.io/nvidia/cuda:12.4-runtime dev -- --gpus all
 dnvim python:3.11 --enable-buildx
 
 # reconnect to a container you already created:
-docker exec -it my-app_python_3.11 /bin/zsh
+docker exec -it nvim_my-app_python_3.11 /bin/zsh
 ```
 
 ### Force a rebuild

@@ -134,3 +134,5 @@ USER ${USERNAME}
 # WORKDIR /config
 # Enable this line if fixuid is used.
 ENTRYPOINT ["/opt/entrypoint_omz.sh"]
+# Replace the base image's CMD (e.g. an app launcher) with zsh.
+CMD ["/bin/zsh"]

@@ -11,7 +11,7 @@ fi
 BUILD_NAME="${START_IMAGE}.nvim"
 USERNAME="${2:-dev}"
 DOCKER_NAME="${3:-python_dev}"
-START_CMD="/bin/bash"
+START_CMD="/bin/zsh"
 MODE="${4:-run}"
 EXTRA_OPTS=("${@:5}")
 
@@ -119,8 +119,26 @@ echo "  Entry command  : $START_CMD"
 
 # Ensure persistent volume for container home directory
 CACHE_DIR=".cache/$DOCKER_NAME"
-mkdir -p "$CACHE_DIR"
+# Pre-create the mount points of the nested shared mounts below as the
+# host user: otherwise Docker creates them (and their parents .config/,
+# .local/, .local/share/) as root, and the container user can't add
+# anything else there -- e.g. nvim's ~/.local/state/nvim.
+mkdir -p "$CACHE_DIR/.oh-my-zsh" "$CACHE_DIR/.config/nvim" "$CACHE_DIR/.local/share/nvim"
 HOMEDIR=$(realpath "$CACHE_DIR")
+
+# Homes created before that mkdir existed already have these as root
+# (mkdir -p leaves existing dirs alone). The host user can't chown them
+# back, so do it from a throwaway root container -- the dirs themselves
+# only, since the shared mounts cover whatever sits beneath them.
+ROOT_OWNED=()
+for d in .oh-my-zsh .config .config/nvim .local .local/share .local/share/nvim; do
+  [[ "$(stat -c %u "$HOMEDIR/$d")" == 0 ]] && ROOT_OWNED+=("/h/$d")
+done
+if (( ${#ROOT_OWNED[@]} )); then
+  echo "[INFO] Fixing root-owned dirs in $HOMEDIR (left by older dnvim versions)"
+  docker run --rm --user 0 --entrypoint chown -v "$HOMEDIR:/h" "$BUILD_NAME" \
+    "$(id -u):$(id -g)" "${ROOT_OWNED[@]}"
+fi
 
 # Update .gitignore safely
 grep -qxF ".cache/" .gitignore 2>/dev/null || echo ".cache/" >> .gitignore
